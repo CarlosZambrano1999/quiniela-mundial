@@ -10,22 +10,18 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  Timestamp,
   where,
 } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/lib/context/AuthContext";
+import AppHeader from "@/components/AppHeader";
+import PageContainer from "@/components/ui/PageContainer";
+import Card from "@/components/ui/Card";
+import Loader from "@/components/ui/Loader";
 import MatchCard, {
   Partido,
   PrediccionPartido,
 } from "@/components/MatchCard";
-import { db } from "@/lib/firebase";
-import { useAuth } from "@/lib/context/AuthContext";
-import BotonCerrarSesion from "@/components/BotonCerrarSesion";
-import Loader from "@/components/ui/Loader";
-import PageContainer from "@/components/ui/PageContainer";
-import AppHeader from "@/components/AppHeader";
-import Card from "@/components/ui/Card";
-
-
 
 type Prediccion = {
   id: string;
@@ -38,6 +34,8 @@ type Prediccion = {
 
 type PrediccionesPorPartido = Record<string, PrediccionPartido>;
 
+type FiltroEstado = "todos" | "pendientes" | "guardados" | "cerrados";
+
 export default function QuinielaPage() {
   const router = useRouter();
   const { usuario, perfil, cargando } = useAuth();
@@ -45,6 +43,10 @@ export default function QuinielaPage() {
   const [partidos, setPartidos] = useState<Partido[]>([]);
   const [predicciones, setPredicciones] = useState<PrediccionesPorPartido>({});
   const [guardandoId, setGuardandoId] = useState<string | null>(null);
+
+  const [grupoSeleccionado, setGrupoSeleccionado] = useState("Grupo A");
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("todos");
+
   const [mensajeError, setMensajeError] = useState("");
   const [mensajeExito, setMensajeExito] = useState("");
 
@@ -143,16 +145,16 @@ export default function QuinielaPage() {
     setMensajeExito("");
 
     if (partido.estado !== "programado") {
-        setMensajeError("Este partido ya no permite predicciones.");
-        return;
-        }
+      setMensajeError("Este partido ya no permite predicciones.");
+      return;
+    }
 
-        if (partidoYaInicio(partido)) {
-        setMensajeError(
-            "Ya no puedes registrar o modificar esta predicción porque el partido ya inició."
-        );
-        return;
-        }
+    if (partidoYaInicio(partido)) {
+      setMensajeError(
+        "Ya no puedes registrar o modificar esta predicción porque el partido ya inició."
+      );
+      return;
+    }
 
     const prediccion = predicciones[partido.id];
 
@@ -174,7 +176,9 @@ export default function QuinielaPage() {
       golesLocalPredicho < 0 ||
       golesVisitantePredicho < 0
     ) {
-      setMensajeError("Los marcadores deben ser números mayores o iguales a cero.");
+      setMensajeError(
+        "Los marcadores deben ser números mayores o iguales a cero."
+      );
       return;
     }
 
@@ -185,29 +189,29 @@ export default function QuinielaPage() {
       const predictionRef = doc(db, "predictions", predictionId);
 
       const datosPrediccion = {
-  userId: usuario.uid,
-  userName: perfil?.nombre ?? usuario.email,
-  userEmail: usuario.email,
-  matchId: partido.id,
-  equipoLocal: partido.equipoLocal,
-  equipoVisitante: partido.equipoVisitante,
-  golesLocalPredicho,
-  golesVisitantePredicho,
-  actualizadoEn: serverTimestamp(),
-};
+        userId: usuario.uid,
+        userName: perfil?.nombre ?? usuario.email,
+        userEmail: usuario.email,
+        matchId: partido.id,
+        equipoLocal: partido.equipoLocal,
+        equipoVisitante: partido.equipoVisitante,
+        golesLocalPredicho,
+        golesVisitantePredicho,
+        actualizadoEn: serverTimestamp(),
+      };
 
-await setDoc(
-  predictionRef,
-  prediccion.guardada
-    ? datosPrediccion
-    : {
-        ...datosPrediccion,
-        puntos: 0,
-        partidoFinalizado: false,
-        creadoEn: serverTimestamp(),
-      },
-  { merge: true }
-);
+      await setDoc(
+        predictionRef,
+        prediccion.guardada
+          ? datosPrediccion
+          : {
+              ...datosPrediccion,
+              puntos: 0,
+              partidoFinalizado: false,
+              creadoEn: serverTimestamp(),
+            },
+        { merge: true }
+      );
 
       setPredicciones((actuales) => ({
         ...actuales,
@@ -227,99 +231,249 @@ await setDoc(
     }
   }
 
-  function formatearFecha(fechaPartido: Timestamp) {
-    return fechaPartido.toDate().toLocaleString("es-HN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+  function partidoYaInicio(partido: Partido) {
+    const fechaPartido = partido.fecha.toDate();
+    const ahora = new Date();
+
+    return ahora >= fechaPartido;
   }
 
-  function partidoYaInicio(partido: Partido) {
-  const fechaPartido = partido.fecha.toDate();
-  const ahora = new Date();
+  function prediccionBloqueada(partido: Partido) {
+    return partido.estado !== "programado" || partidoYaInicio(partido);
+  }
 
-  return ahora >= fechaPartido;
-}
+  const gruposDisponibles = [
+    "Todos",
+    ...Array.from(new Set(partidos.map((partido) => partido.grupo))).sort(),
+  ];
 
-function prediccionBloqueada(partido: Partido) {
-  return partido.estado !== "programado" || partidoYaInicio(partido);
-}
+  const partidosFiltrados = partidos.filter((partido) => {
+    const prediccion = predicciones[partido.id];
+    const bloqueado = prediccionBloqueada(partido);
 
-    if (cargando) {
+    const coincideGrupo =
+      grupoSeleccionado === "Todos" || partido.grupo === grupoSeleccionado;
+
+    const coincideEstado =
+      filtroEstado === "todos" ||
+      (filtroEstado === "pendientes" && !prediccion?.guardada && !bloqueado) ||
+      (filtroEstado === "guardados" && prediccion?.guardada && !bloqueado) ||
+      (filtroEstado === "cerrados" && bloqueado);
+
+    return coincideGrupo && coincideEstado;
+  });
+
+  const totalPendientes = partidos.filter((partido) => {
+    const prediccion = predicciones[partido.id];
+    const bloqueado = prediccionBloqueada(partido);
+
+    return !prediccion?.guardada && !bloqueado;
+  }).length;
+
+  const totalGuardados = partidos.filter((partido) => {
+    const prediccion = predicciones[partido.id];
+    const bloqueado = prediccionBloqueada(partido);
+
+    return prediccion?.guardada && !bloqueado;
+  }).length;
+
+  const totalCerrados = partidos.filter((partido) =>
+    prediccionBloqueada(partido)
+  ).length;
+
+  if (cargando) {
     return <Loader texto="Cargando sesión..." />;
-    }
+  }
 
   if (!usuario) {
     return null;
   }
 
-return (
-  <PageContainer>
-    <AppHeader />
+  return (
+    <PageContainer>
+      <AppHeader />
 
-    <div className="mb-8">
-      <p className="text-sm font-semibold text-blue-600">
-        Quiniela Mundial
-      </p>
-
-      <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">
-        Mis predicciones
-      </h1>
-
-      <p className="mt-2 max-w-2xl text-slate-600">
-        Hola, {perfil?.nombre || usuario.email}. Registra tus marcadores antes
-        de que los partidos inicien.
-      </p>
-    </div>
-
-    {(mensajeError || mensajeExito) && (
-      <div className="mb-6">
-        {mensajeError && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-            {mensajeError}
-          </div>
-        )}
-
-        {mensajeExito && (
-          <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
-            {mensajeExito}
-          </div>
-        )}
-      </div>
-    )}
-
-    {partidos.length === 0 ? (
-      <Card>
-        <h2 className="text-xl font-bold text-slate-900">
-          No hay partidos disponibles
-        </h2>
-
-        <p className="mt-2 text-slate-600">
-          El administrador todavía no ha registrado partidos.
+      <div className="mb-8">
+        <p className="text-sm font-semibold text-blue-600">
+          Quiniela Mundial
         </p>
-      </Card>
-    ) : (
-      <div className="grid gap-5">
-        {partidos.map((partido) => {
-          const prediccion = predicciones[partido.id];
-          const yaInicio = partidoYaInicio(partido);
-          const bloqueado = prediccionBloqueada(partido);
 
-          return (
-            <MatchCard
-              key={partido.id}
-              partido={partido}
-              prediccion={prediccion}
-              bloqueado={bloqueado}
-              yaInicio={yaInicio}
-              guardando={guardandoId === partido.id}
-              onCambiarPrediccion={actualizarPrediccion}
-              onGuardarPrediccion={guardarPrediccion}
-            />
-          );
-        })}
+        <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">
+          Mis predicciones
+        </h1>
+
+        <p className="mt-2 max-w-2xl text-slate-600">
+          Hola, {perfil?.nombre || usuario.email}. Registra tus marcadores
+          antes de que los partidos inicien.
+        </p>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-slate-500">Pendientes</p>
+            <p className="mt-1 text-3xl font-black text-blue-600">
+              {totalPendientes}
+            </p>
+          </Card>
+
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-slate-500">Guardados</p>
+            <p className="mt-1 text-3xl font-black text-green-600">
+              {totalGuardados}
+            </p>
+          </Card>
+
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-slate-500">Cerrados</p>
+            <p className="mt-1 text-3xl font-black text-amber-600">
+              {totalCerrados}
+            </p>
+          </Card>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <div>
+            <p className="mb-2 text-sm font-bold text-slate-700">
+              Filtrar por grupo
+            </p>
+
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {gruposDisponibles.map((grupo) => (
+                <button
+                  key={grupo}
+                  type="button"
+                  onClick={() => setGrupoSeleccionado(grupo)}
+                  className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold transition ${
+                    grupoSeleccionado === grupo
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {grupo}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-sm font-bold text-slate-700">
+              Filtrar por estado
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setFiltroEstado("todos")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  filtroEstado === "todos"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Todos
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFiltroEstado("pendientes")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  filtroEstado === "pendientes"
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Pendientes
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFiltroEstado("guardados")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  filtroEstado === "guardados"
+                    ? "bg-green-600 text-white"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Guardados
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFiltroEstado("cerrados")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  filtroEstado === "cerrados"
+                    ? "bg-amber-600 text-white"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Cerrados
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-white/80 px-5 py-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+          Mostrando {partidosFiltrados.length} de {partidos.length} partidos
+        </div>
       </div>
-    )}
-  </PageContainer>
-);
+
+      {(mensajeError || mensajeExito) && (
+        <div className="mb-6">
+          {mensajeError && (
+            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              {mensajeError}
+            </div>
+          )}
+
+          {mensajeExito && (
+            <div className="mt-3 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+              {mensajeExito}
+            </div>
+          )}
+        </div>
+      )}
+
+      {partidos.length === 0 ? (
+        <Card>
+          <h2 className="text-xl font-bold text-slate-900">
+            No hay partidos disponibles
+          </h2>
+
+          <p className="mt-2 text-slate-600">
+            El administrador todavía no ha registrado partidos.
+          </p>
+        </Card>
+      ) : partidosFiltrados.length === 0 ? (
+        <Card>
+          <h2 className="text-xl font-bold text-slate-900">
+            No hay partidos para este filtro
+          </h2>
+
+          <p className="mt-2 text-slate-600">
+            Prueba seleccionando otro grupo o cambiando el filtro de estado.
+          </p>
+        </Card>
+      ) : (
+        <div className="grid gap-5">
+          {partidosFiltrados.map((partido) => {
+            const prediccion = predicciones[partido.id];
+            const yaInicio = partidoYaInicio(partido);
+            const bloqueado = prediccionBloqueada(partido);
+
+            return (
+              <MatchCard
+                key={partido.id}
+                partido={partido}
+                prediccion={prediccion}
+                bloqueado={bloqueado}
+                yaInicio={yaInicio}
+                guardando={guardandoId === partido.id}
+                onCambiarPrediccion={actualizarPrediccion}
+                onGuardarPrediccion={guardarPrediccion}
+              />
+            );
+          })}
+        </div>
+      )}
+    </PageContainer>
+  );
 }
