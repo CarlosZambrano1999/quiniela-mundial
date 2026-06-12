@@ -35,6 +35,7 @@ type Prediccion = {
 type PrediccionesPorPartido = Record<string, PrediccionPartido>;
 
 type FiltroEstado = "todos" | "pendientes" | "guardados" | "cerrados";
+type VistaRapida = "proximos" | "todos";
 
 export default function QuinielaPage() {
   const router = useRouter();
@@ -44,8 +45,9 @@ export default function QuinielaPage() {
   const [predicciones, setPredicciones] = useState<PrediccionesPorPartido>({});
   const [guardandoId, setGuardandoId] = useState<string | null>(null);
 
-  const [grupoSeleccionado, setGrupoSeleccionado] = useState("Grupo A");
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("todos");
+  const [vistaRapida, setVistaRapida] = useState<VistaRapida>("proximos");
+  const [grupoSeleccionado, setGrupoSeleccionado] = useState("Todos");
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("pendientes");
 
   const [mensajeError, setMensajeError] = useState("");
   const [mensajeExito, setMensajeExito] = useState("");
@@ -242,27 +244,6 @@ export default function QuinielaPage() {
     return partido.estado !== "programado" || partidoYaInicio(partido);
   }
 
-  const gruposDisponibles = [
-    "Todos",
-    ...Array.from(new Set(partidos.map((partido) => partido.grupo))).sort(),
-  ];
-
-  const partidosFiltrados = partidos.filter((partido) => {
-    const prediccion = predicciones[partido.id];
-    const bloqueado = prediccionBloqueada(partido);
-
-    const coincideGrupo =
-      grupoSeleccionado === "Todos" || partido.grupo === grupoSeleccionado;
-
-    const coincideEstado =
-      filtroEstado === "todos" ||
-      (filtroEstado === "pendientes" && !prediccion?.guardada && !bloqueado) ||
-      (filtroEstado === "guardados" && prediccion?.guardada && !bloqueado) ||
-      (filtroEstado === "cerrados" && bloqueado);
-
-    return coincideGrupo && coincideEstado;
-  });
-
   const totalPendientes = partidos.filter((partido) => {
     const prediccion = predicciones[partido.id];
     const bloqueado = prediccionBloqueada(partido);
@@ -280,6 +261,48 @@ export default function QuinielaPage() {
   const totalCerrados = partidos.filter((partido) =>
     prediccionBloqueada(partido)
   ).length;
+
+  const partidosProximos = partidos
+    .filter((partido) => !prediccionBloqueada(partido))
+    .slice(0, 8);
+
+  const partidosBase =
+    vistaRapida === "proximos" ? partidosProximos : partidos;
+
+  const gruposDisponibles = [
+    "Todos",
+    ...Array.from(new Set(partidos.map((partido) => partido.grupo))).sort(),
+  ];
+
+  const partidosFiltrados = partidosBase.filter((partido) => {
+    const prediccion = predicciones[partido.id];
+    const bloqueado = prediccionBloqueada(partido);
+
+    const coincideGrupo =
+      grupoSeleccionado === "Todos" || partido.grupo === grupoSeleccionado;
+
+    const coincideEstado =
+      filtroEstado === "todos" ||
+      (filtroEstado === "pendientes" && !prediccion?.guardada && !bloqueado) ||
+      (filtroEstado === "guardados" && prediccion?.guardada && !bloqueado) ||
+      (filtroEstado === "cerrados" && bloqueado);
+
+    return coincideGrupo && coincideEstado;
+  });
+
+  const proximoPartido = partidosProximos[0];
+
+  function activarVistaProximos() {
+    setVistaRapida("proximos");
+    setGrupoSeleccionado("Todos");
+    setFiltroEstado("pendientes");
+  }
+
+  function activarVistaTodos() {
+    setVistaRapida("todos");
+    setGrupoSeleccionado("Todos");
+    setFiltroEstado("todos");
+  }
 
   if (cargando) {
     return <Loader texto="Cargando sesión..." />;
@@ -307,6 +330,40 @@ export default function QuinielaPage() {
           antes de que los partidos inicien.
         </p>
 
+        {proximoPartido && (
+          <Card className="mt-6 border-blue-200 bg-gradient-to-r from-blue-600 to-slate-900 p-6 text-white">
+            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-wide text-blue-100">
+                  Próximo partido a jugarse
+                </p>
+
+                <h2 className="mt-2 text-3xl font-black">
+                  {proximoPartido.equipoLocal} vs{" "}
+                  {proximoPartido.equipoVisitante}
+                </h2>
+
+                <p className="mt-2 text-sm font-medium text-blue-100">
+                  {proximoPartido.grupo} ·{" "}
+                  {proximoPartido.fecha.toDate().toLocaleString("es-HN", {
+                    dateStyle: "full",
+                    timeStyle: "short",
+                  })}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white/15 px-5 py-4 text-center backdrop-blur">
+                <p className="text-sm font-semibold text-blue-100">
+                  Partidos próximos
+                </p>
+                <p className="mt-1 text-4xl font-black">
+                  {partidosProximos.length}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
           <Card className="p-5">
             <p className="text-sm font-semibold text-slate-500">Pendientes</p>
@@ -328,6 +385,38 @@ export default function QuinielaPage() {
               {totalCerrados}
             </p>
           </Card>
+        </div>
+
+        <div className="mt-6 rounded-2xl bg-white/80 p-4 ring-1 ring-slate-200">
+          <p className="mb-3 text-sm font-bold text-slate-700">
+            Vista rápida
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={activarVistaProximos}
+              className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                vistaRapida === "proximos"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              Próximos a jugarse
+            </button>
+
+            <button
+              type="button"
+              onClick={activarVistaTodos}
+              className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                vistaRapida === "todos"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              Todos los partidos
+            </button>
+          </div>
         </div>
 
         <div className="mt-6 space-y-4">
@@ -412,7 +501,9 @@ export default function QuinielaPage() {
         </div>
 
         <div className="mt-4 rounded-2xl bg-white/80 px-5 py-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
-          Mostrando {partidosFiltrados.length} de {partidos.length} partidos
+          {vistaRapida === "proximos"
+            ? `Mostrando ${partidosFiltrados.length} partidos próximos disponibles`
+            : `Mostrando ${partidosFiltrados.length} de ${partidos.length} partidos`}
         </div>
       </div>
 
@@ -449,7 +540,8 @@ export default function QuinielaPage() {
           </h2>
 
           <p className="mt-2 text-slate-600">
-            Prueba seleccionando otro grupo o cambiando el filtro de estado.
+            Prueba seleccionando otra vista, otro grupo o cambiando el filtro de
+            estado.
           </p>
         </Card>
       ) : (
