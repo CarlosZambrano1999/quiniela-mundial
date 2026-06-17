@@ -259,189 +259,187 @@ export default function EnVivoPage() {
   }
 
   const estadoVisual = obtenerEstadoVisual(partidoSeleccionado);
-  const mostrarPredicciones = partidoYaInicio(partidoSeleccionado);
-
+  const partidoSeleccionadoYaInicio = partidoYaInicio(partidoSeleccionado);
+  const mostrarPredicciones = true;
   return (
-    <PageContainer>
-      <AppHeader />
+  <PageContainer>
+    <AppHeader />
 
-      <div className="mb-8">
-        <p className="text-sm font-semibold text-blue-600">
-          Quiniela Mundial
-        </p>
+    <div className="mb-8">
+      <p className="text-sm font-semibold text-blue-600">
+        Quiniela Mundial
+      </p>
 
-        <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">
-          Predicciones del partido
-        </h1>
+      <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">
+        Predicciones del partido
+      </h1>
 
-        <p className="mt-2 max-w-2xl text-slate-600">
-          Visualiza las predicciones de todos los participantes para el partido
-          actual. La pantalla cambia automáticamente según el próximo juego.
-        </p>
-      </div>
+      <p className="mt-2 max-w-2xl text-slate-600">
+        Visualiza las predicciones de todos los participantes para el partido
+        actual o el próximo partido disponible. La pantalla cambia
+        automáticamente según el calendario.
+      </p>
+    </div>
 
-      <Card className="mb-6 border-blue-200 bg-gradient-to-r from-slate-900 to-blue-700 p-6 text-white">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={estadoVisual.variant}>{estadoVisual.texto}</Badge>
-              <Badge>{partidoSeleccionado.grupo}</Badge>
-              <Badge>{partidoSeleccionado.fase}</Badge>
-            </div>
-
-            <h2 className="mt-4 text-4xl font-black">
-              {partidoSeleccionado.equipoLocal} vs{" "}
-              {partidoSeleccionado.equipoVisitante}
-            </h2>
-
-            <p className="mt-2 text-sm font-medium text-blue-100">
-              {formatearFecha(partidoSeleccionado.fecha)}
-            </p>
+    <Card className="mb-6 border-blue-200 bg-gradient-to-r from-slate-900 to-blue-700 p-6 text-white">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={estadoVisual.variant}>{estadoVisual.texto}</Badge>
+            <Badge>{partidoSeleccionado.grupo}</Badge>
+            <Badge>{partidoSeleccionado.fase}</Badge>
           </div>
 
-          <div className="rounded-2xl bg-white/15 px-6 py-5 text-center backdrop-blur">
-            <p className="text-sm font-semibold text-blue-100">
-              Predicciones registradas
-            </p>
-            <p className="mt-1 text-5xl font-black">{resumen.total}</p>
-          </div>
-        </div>
-      </Card>
-
-      {!mostrarPredicciones ? (
-        <Card>
-          <h2 className="text-2xl font-black text-slate-900">
-            Las predicciones se mostrarán cuando inicie el partido
+          <h2 className="mt-4 text-4xl font-black">
+            {partidoSeleccionado.equipoLocal} vs{" "}
+            {partidoSeleccionado.equipoVisitante}
           </h2>
 
-          <p className="mt-2 text-slate-600">
-            Por ahora esta pantalla está mostrando el próximo juego disponible.
-            Cuando llegue la hora del partido, aquí aparecerán las predicciones
-            de todos los participantes.
+          <p className="mt-2 text-sm font-medium text-blue-100">
+            {formatearFecha(partidoSeleccionado.fecha)}
           </p>
-        </Card>
+        </div>
+
+        <div className="rounded-2xl bg-white/15 px-6 py-5 text-center backdrop-blur">
+          <p className="text-sm font-semibold text-blue-100">
+            Predicciones registradas
+          </p>
+          <p className="mt-1 text-5xl font-black">{resumen.total}</p>
+        </div>
+      </div>
+    </Card>
+
+    {!partidoSeleccionadoYaInicio && (
+      <Card className="mb-6 border-blue-200 bg-blue-50">
+        <h2 className="text-xl font-black text-slate-900">
+          Próximo partido
+        </h2>
+
+        <p className="mt-2 text-slate-600">
+          Este partido todavía no inicia, pero ya puedes ver las predicciones
+          registradas por los participantes.
+        </p>
+      </Card>
+    )}
+
+    <div className="mb-6 grid gap-4 md:grid-cols-4">
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-slate-500">
+          Total predicciones
+        </p>
+        <p className="mt-1 text-3xl font-black text-slate-900">
+          {resumen.total}
+        </p>
+      </Card>
+
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-slate-500">
+          Gana {partidoSeleccionado.equipoLocal}
+        </p>
+        <p className="mt-1 text-3xl font-black text-blue-600">
+          {resumen.local}
+        </p>
+      </Card>
+
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-slate-500">Empate</p>
+        <p className="mt-1 text-3xl font-black text-amber-600">
+          {resumen.empate}
+        </p>
+      </Card>
+
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-slate-500">
+          Gana {partidoSeleccionado.equipoVisitante}
+        </p>
+        <p className="mt-1 text-3xl font-black text-green-600">
+          {resumen.visitante}
+        </p>
+      </Card>
+    </div>
+
+    <Card>
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-black text-slate-900">
+            Predicciones de participantes
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Marcadores registrados para este partido.
+          </p>
+        </div>
+
+        {cargandoPredicciones && (
+          <p className="text-sm font-semibold text-slate-500">
+            Actualizando...
+          </p>
+        )}
+      </div>
+
+      {predicciones.length === 0 ? (
+        <p className="text-slate-600">
+          Todavía no hay predicciones registradas para este partido.
+        </p>
       ) : (
-        <>
-          <div className="mb-6 grid gap-4 md:grid-cols-4">
-            <Card className="p-5">
-              <p className="text-sm font-semibold text-slate-500">
-                Total predicciones
-              </p>
-              <p className="mt-1 text-3xl font-black text-slate-900">
-                {resumen.total}
-              </p>
-            </Card>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="py-3 pr-4 font-semibold">
+                  Participante
+                </th>
+                <th className="py-3 pr-4 font-semibold">
+                  Predicción
+                </th>
+                <th className="py-3 pr-4 font-semibold">
+                  Tendencia
+                </th>
+              </tr>
+            </thead>
 
-            <Card className="p-5">
-              <p className="text-sm font-semibold text-slate-500">
-                Gana {partidoSeleccionado.equipoLocal}
-              </p>
-              <p className="mt-1 text-3xl font-black text-blue-600">
-                {resumen.local}
-              </p>
-            </Card>
+            <tbody>
+              {predicciones.map((prediccion) => (
+                <tr
+                  key={prediccion.id}
+                  className="border-b border-slate-100 text-slate-700 last:border-b-0 hover:bg-slate-50"
+                >
+                  <td className="py-4 pr-4">
+                    <p className="font-bold text-slate-900">
+                      {prediccion.userName ||
+                        prediccion.userEmail ||
+                        "Participante"}
+                    </p>
 
-            <Card className="p-5">
-              <p className="text-sm font-semibold text-slate-500">Empate</p>
-              <p className="mt-1 text-3xl font-black text-amber-600">
-                {resumen.empate}
-              </p>
-            </Card>
+                    {prediccion.userEmail && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        {prediccion.userEmail}
+                      </p>
+                    )}
+                  </td>
 
-            <Card className="p-5">
-              <p className="text-sm font-semibold text-slate-500">
-                Gana {partidoSeleccionado.equipoVisitante}
-              </p>
-              <p className="mt-1 text-3xl font-black text-green-600">
-                {resumen.visitante}
-              </p>
-            </Card>
-          </div>
+                  <td className="py-4 pr-4">
+                    <span className="rounded-xl bg-slate-100 px-4 py-2 text-lg font-black text-slate-900">
+                      {prediccion.golesLocalPredicho} -{" "}
+                      {prediccion.golesVisitantePredicho}
+                    </span>
+                  </td>
 
-          <Card>
-            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-black text-slate-900">
-                  Predicciones de participantes
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Marcadores registrados para este partido.
-                </p>
-              </div>
-
-              {cargandoPredicciones && (
-                <p className="text-sm font-semibold text-slate-500">
-                  Actualizando...
-                </p>
-              )}
-            </div>
-
-            {predicciones.length === 0 ? (
-              <p className="text-slate-600">
-                Todavía no hay predicciones registradas para este partido.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
-                      <th className="py-3 pr-4 font-semibold">
-                        Participante
-                      </th>
-                      <th className="py-3 pr-4 font-semibold">
-                        Predicción
-                      </th>
-                      <th className="py-3 pr-4 font-semibold">
-                        Tendencia
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {predicciones.map((prediccion) => (
-                      <tr
-                        key={prediccion.id}
-                        className="border-b border-slate-100 text-slate-700 last:border-b-0 hover:bg-slate-50"
-                      >
-                        <td className="py-4 pr-4">
-                          <p className="font-bold text-slate-900">
-                            {prediccion.userName ||
-                              prediccion.userEmail ||
-                              "Participante"}
-                          </p>
-
-                          {prediccion.userEmail && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              {prediccion.userEmail}
-                            </p>
-                          )}
-                        </td>
-
-                        <td className="py-4 pr-4">
-                          <span className="rounded-xl bg-slate-100 px-4 py-2 text-lg font-black text-slate-900">
-                            {prediccion.golesLocalPredicho} -{" "}
-                            {prediccion.golesVisitantePredicho}
-                          </span>
-                        </td>
-
-                        <td className="py-4 pr-4">
-                          <Badge>
-                            {obtenerSigno(
-                              prediccion.golesLocalPredicho,
-                              prediccion.golesVisitantePredicho
-                            )}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </>
+                  <td className="py-4 pr-4">
+                    <Badge>
+                      {obtenerSigno(
+                        prediccion.golesLocalPredicho,
+                        prediccion.golesVisitantePredicho
+                      )}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </PageContainer>
-  );
+    </Card>
+  </PageContainer>
+);
 }

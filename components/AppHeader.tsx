@@ -32,7 +32,7 @@ export default function AppHeader() {
             href="/en-vivo"
             className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
           >
-            En vivo
+            Demás predicciones
           </Link>
 
           <Link
