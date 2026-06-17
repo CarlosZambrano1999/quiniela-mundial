@@ -29,6 +29,13 @@ export default function AppHeader() {
           </Link>
 
           <Link
+            href="/en-vivo"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            En vivo
+          </Link>
+
+          <Link
             href="/ranking"
             className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
           >
