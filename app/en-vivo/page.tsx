@@ -7,7 +7,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import AppHeader from "@/components/AppHeader";
@@ -28,7 +27,7 @@ type Partido = {
   golesVisitante: number | null;
 };
 
-type PrediccionEnVivo = {
+type Prediccion = {
   id: string;
   userId: string;
   userName?: string;
@@ -41,14 +40,21 @@ type PrediccionEnVivo = {
   puntos?: number;
 };
 
+type ResultadoAgrupado = {
+  exactas: Prediccion[];
+  resultado: Prediccion[];
+  perdidas: Prediccion[];
+};
+
 const DURACION_ESTIMADA_PARTIDO_MS = 2.5 * 60 * 60 * 1000;
 
 export default function EnVivoPage() {
   const [partidos, setPartidos] = useState<Partido[]>([]);
-  const [predicciones, setPredicciones] = useState<PrediccionEnVivo[]>([]);
+  const [predicciones, setPredicciones] = useState<Prediccion[]>([]);
   const [cargandoPartidos, setCargandoPartidos] = useState(true);
-  const [cargandoPredicciones, setCargandoPredicciones] = useState(false);
+  const [cargandoPredicciones, setCargandoPredicciones] = useState(true);
   const [ahora, setAhora] = useState(new Date());
+  const [fechaSeleccionada, setFechaSeleccionada] = useState("");
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -84,59 +90,8 @@ export default function EnVivoPage() {
     return () => unsubscribe();
   }, []);
 
-  const partidoSeleccionado = useMemo(() => {
-    if (partidos.length === 0) {
-      return null;
-    }
-
-    const partidoMarcadoEnJuego = partidos.find(
-      (partido) => partido.estado === "en_juego"
-    );
-
-    if (partidoMarcadoEnJuego) {
-      return partidoMarcadoEnJuego;
-    }
-
-    const partidoPorHorario = partidos.find((partido) => {
-      if (partido.estado === "finalizado") {
-        return false;
-      }
-
-      const fechaPartido = partido.fecha.toDate();
-      const finEstimado = new Date(
-        fechaPartido.getTime() + DURACION_ESTIMADA_PARTIDO_MS
-      );
-
-      return ahora >= fechaPartido && ahora <= finEstimado;
-    });
-
-    if (partidoPorHorario) {
-      return partidoPorHorario;
-    }
-
-    const proximoPartido = partidos.find((partido) => {
-      if (partido.estado === "finalizado") {
-        return false;
-      }
-
-      return partido.fecha.toDate() > ahora;
-    });
-
-    return proximoPartido ?? partidos[partidos.length - 1];
-  }, [partidos, ahora]);
-
   useEffect(() => {
-    if (!partidoSeleccionado) {
-      setPredicciones([]);
-      return;
-    }
-
-    setCargandoPredicciones(true);
-
-    const prediccionesQuery = query(
-      collection(db, "predictions"),
-      where("matchId", "==", partidoSeleccionado.id)
-    );
+    const prediccionesQuery = query(collection(db, "predictions"));
 
     const unsubscribe = onSnapshot(
       prediccionesQuery,
@@ -144,13 +99,7 @@ export default function EnVivoPage() {
         const lista = snapshot.docs.map((documento) => ({
           id: documento.id,
           ...documento.data(),
-        })) as PrediccionEnVivo[];
-
-        lista.sort((a, b) => {
-          const nombreA = a.userName || a.userEmail || "";
-          const nombreB = b.userName || b.userEmail || "";
-          return nombreA.localeCompare(nombreB);
-        });
+        })) as Prediccion[];
 
         setPredicciones(lista);
         setCargandoPredicciones(false);
@@ -163,20 +112,210 @@ export default function EnVivoPage() {
     );
 
     return () => unsubscribe();
-  }, [partidoSeleccionado]);
+  }, []);
 
-  function formatearFecha(fecha: Timestamp) {
-    return fecha.toDate().toLocaleString("es-HN", {
-      dateStyle: "full",
-      timeStyle: "short",
+  const fechasDisponibles = useMemo(() => {
+    return Array.from(
+      new Set(
+        partidos.map((partido) => obtenerFechaInput(partido.fecha.toDate()))
+      )
+    ).sort();
+  }, [partidos]);
+
+  useEffect(() => {
+    if (fechaSeleccionada || fechasDisponibles.length === 0) {
+      return;
+    }
+
+    const hoy = obtenerFechaInput(new Date());
+
+    if (fechasDisponibles.includes(hoy)) {
+      setFechaSeleccionada(hoy);
+      return;
+    }
+
+    const proximaFecha = fechasDisponibles.find((fecha) => fecha > hoy);
+
+    setFechaSeleccionada(proximaFecha ?? fechasDisponibles[0]);
+  }, [fechaSeleccionada, fechasDisponibles]);
+
+  const partidosDelDia = useMemo(() => {
+    return partidos.filter(
+      (partido) => obtenerFechaInput(partido.fecha.toDate()) === fechaSeleccionada
+    );
+  }, [partidos, fechaSeleccionada]);
+
+  const prediccionesPorPartido = useMemo(() => {
+    const mapa = new Map<string, Prediccion[]>();
+
+    predicciones.forEach((prediccion) => {
+      const actuales = mapa.get(prediccion.matchId) ?? [];
+      actuales.push(prediccion);
+      mapa.set(prediccion.matchId, actuales);
+    });
+
+    mapa.forEach((lista) => {
+      lista.sort((a, b) => obtenerNombre(a).localeCompare(obtenerNombre(b)));
+    });
+
+    return mapa;
+  }, [predicciones]);
+
+  const resumenDia = useMemo(() => {
+    let totalPredicciones = 0;
+    let finalizados = 0;
+    let enJuego = 0;
+    let pendientes = 0;
+
+    partidosDelDia.forEach((partido) => {
+      totalPredicciones += prediccionesPorPartido.get(partido.id)?.length ?? 0;
+
+      if (partido.estado === "finalizado") {
+        finalizados++;
+      } else if (estaEnJuego(partido)) {
+        enJuego++;
+      } else {
+        pendientes++;
+      }
+    });
+
+    return {
+      totalPredicciones,
+      finalizados,
+      enJuego,
+      pendientes,
+    };
+  }, [partidosDelDia, prediccionesPorPartido, ahora]);
+
+  function obtenerFechaInput(fecha: Date) {
+    const year = fecha.getFullYear();
+    const month = String(fecha.getMonth() + 1).padStart(2, "0");
+    const day = String(fecha.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatearFechaDia(fechaInput: string) {
+    if (!fechaInput) {
+      return "Sin fecha";
+    }
+
+    const [year, month, day] = fechaInput.split("-").map(Number);
+    const fecha = new Date(year, month - 1, day);
+
+    return fecha.toLocaleDateString("es-HN", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
   }
 
-  function partidoYaInicio(partido: Partido) {
-    return ahora >= partido.fecha.toDate();
+  function formatearHora(fecha: Timestamp) {
+    return fecha.toDate().toLocaleTimeString("es-HN", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }
 
-  function obtenerEstadoVisual(partido: Partido) {
+  function obtenerNombre(prediccion: Prediccion) {
+    return prediccion.userName || prediccion.userEmail || "Participante";
+  }
+
+  function obtenerSigno(golesLocal: number, golesVisitante: number) {
+    if (golesLocal > golesVisitante) return "LOCAL";
+    if (golesLocal < golesVisitante) return "VISITANTE";
+    return "EMPATE";
+  }
+
+  function calcularPuntos(partido: Partido, prediccion: Prediccion) {
+    if (partido.golesLocal === null || partido.golesVisitante === null) {
+      return 0;
+    }
+
+    const exacta =
+      partido.golesLocal === prediccion.golesLocalPredicho &&
+      partido.golesVisitante === prediccion.golesVisitantePredicho;
+
+    if (exacta) {
+      return 3;
+    }
+
+    const signoReal = obtenerSigno(partido.golesLocal, partido.golesVisitante);
+    const signoPredicho = obtenerSigno(
+      prediccion.golesLocalPredicho,
+      prediccion.golesVisitantePredicho
+    );
+
+    if (signoReal === signoPredicho) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  function agruparResultados(
+    partido: Partido,
+    prediccionesPartido: Prediccion[]
+  ): ResultadoAgrupado {
+    const exactas: Prediccion[] = [];
+    const resultado: Prediccion[] = [];
+    const perdidas: Prediccion[] = [];
+
+    prediccionesPartido.forEach((prediccion) => {
+      const puntos = calcularPuntos(partido, prediccion);
+
+      if (puntos === 3) {
+        exactas.push(prediccion);
+      } else if (puntos === 1) {
+        resultado.push(prediccion);
+      } else {
+        perdidas.push(prediccion);
+      }
+    });
+
+    return {
+      exactas,
+      resultado,
+      perdidas,
+    };
+  }
+
+  function estaEnJuego(partido: Partido) {
+    if (partido.estado === "en_juego") {
+      return true;
+    }
+
+    if (partido.estado === "finalizado") {
+      return false;
+    }
+
+    const inicio = partido.fecha.toDate();
+    const finEstimado = new Date(
+      inicio.getTime() + DURACION_ESTIMADA_PARTIDO_MS
+    );
+
+    return ahora >= inicio && ahora <= finEstimado;
+  }
+
+  function partidoYaPaso(partido: Partido) {
+    if (partido.estado === "finalizado") {
+      return true;
+    }
+
+    const inicio = partido.fecha.toDate();
+    const finEstimado = new Date(
+      inicio.getTime() + DURACION_ESTIMADA_PARTIDO_MS
+    );
+
+    return ahora > finEstimado;
+  }
+
+  function partidoTieneResultado(partido: Partido) {
+    return partido.golesLocal !== null && partido.golesVisitante !== null;
+  }
+
+  function obtenerEstadoPartido(partido: Partido) {
     if (partido.estado === "finalizado") {
       return {
         texto: "Finalizado",
@@ -184,262 +323,336 @@ export default function EnVivoPage() {
       };
     }
 
-    if (partido.estado === "en_juego") {
+    if (estaEnJuego(partido)) {
       return {
         texto: "En juego",
         variant: "red" as const,
       };
     }
 
-    if (partidoYaInicio(partido)) {
+    if (partidoYaPaso(partido)) {
       return {
-        texto: "En juego por horario",
-        variant: "red" as const,
+        texto: "Pendiente resultado",
+        variant: "amber" as const,
       };
     }
 
     return {
-      texto: "Próximo partido",
+      texto: "Por jugar",
       variant: "blue" as const,
     };
   }
 
-  function obtenerSigno(golesLocal: number, golesVisitante: number) {
-    if (golesLocal > golesVisitante) return "Gana local";
-    if (golesLocal < golesVisitante) return "Gana visitante";
-    return "Empate";
-  }
-
-  const resumen = useMemo(() => {
-    const total = predicciones.length;
-
-    const local = predicciones.filter(
-      (prediccion) =>
-        prediccion.golesLocalPredicho > prediccion.golesVisitantePredicho
-    ).length;
-
-    const empate = predicciones.filter(
-      (prediccion) =>
-        prediccion.golesLocalPredicho === prediccion.golesVisitantePredicho
-    ).length;
-
-    const visitante = predicciones.filter(
-      (prediccion) =>
-        prediccion.golesLocalPredicho < prediccion.golesVisitantePredicho
-    ).length;
-
-    return {
-      total,
-      local,
-      empate,
-      visitante,
-    };
-  }, [predicciones]);
-
-  if (cargandoPartidos) {
-    return <Loader texto="Cargando partido en vivo..." />;
-  }
-
-  if (!partidoSeleccionado) {
+  function PrediccionMiniCard({
+    prediccion,
+    puntos,
+  }: {
+    prediccion: Prediccion;
+    puntos?: number;
+  }) {
     return (
-      <PageContainer>
-        <AppHeader />
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-slate-900">
+              {obtenerNombre(prediccion)}
+            </p>
 
-        <Card>
-          <h1 className="text-2xl font-black text-slate-900">
-            No hay partidos cargados
-          </h1>
+            {prediccion.userEmail && (
+              <p className="mt-1 truncate text-xs text-slate-500">
+                {prediccion.userEmail}
+              </p>
+            )}
+          </div>
 
-          <p className="mt-2 text-slate-600">
-            Todavía no existen partidos en la colección matches.
-          </p>
-        </Card>
-      </PageContainer>
+          {puntos !== undefined && (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+              {puntos} pts
+            </span>
+          )}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-100 px-4 py-3">
+          <span className="text-xs font-bold text-slate-500">Predicción</span>
+          <span className="text-xl font-black text-slate-900">
+            {prediccion.golesLocalPredicho} -{" "}
+            {prediccion.golesVisitantePredicho}
+          </span>
+        </div>
+      </div>
     );
   }
 
-  const estadoVisual = obtenerEstadoVisual(partidoSeleccionado);
-  const partidoSeleccionadoYaInicio = partidoYaInicio(partidoSeleccionado);
-  const mostrarPredicciones = true;
-  return (
-  <PageContainer>
-    <AppHeader />
+  function PartidoCard({ partido }: { partido: Partido }) {
+    const prediccionesPartido = prediccionesPorPartido.get(partido.id) ?? [];
+    const estado = obtenerEstadoPartido(partido);
+    const puedeClasificar = partidoTieneResultado(partido);
+    const grupos = agruparResultados(partido, prediccionesPartido);
 
-    <div className="mb-8">
-      <p className="text-sm font-semibold text-blue-600">
-        Quiniela Mundial
-      </p>
+    const totalExactas = grupos.exactas.length;
+    const totalResultado = grupos.resultado.length;
+    const totalPerdidas = grupos.perdidas.length;
 
-      <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">
-        Predicciones del partido
-      </h1>
+    return (
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-slate-50 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={estado.variant}>{estado.texto}</Badge>
+                <Badge>{partido.grupo}</Badge>
+                <Badge>{formatearHora(partido.fecha)}</Badge>
+              </div>
 
-      <p className="mt-2 max-w-2xl text-slate-600">
-        Visualiza las predicciones de todos los participantes para el partido
-        actual o el próximo partido disponible. La pantalla cambia
-        automáticamente según el calendario.
-      </p>
-    </div>
+              <h2 className="mt-3 text-2xl font-black leading-tight text-slate-900">
+                {partido.equipoLocal} vs {partido.equipoVisitante}
+              </h2>
+            </div>
 
-    <Card className="mb-6 border-blue-200 bg-gradient-to-r from-slate-900 to-blue-700 p-6 text-white">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={estadoVisual.variant}>{estadoVisual.texto}</Badge>
-            <Badge>{partidoSeleccionado.grupo}</Badge>
-            <Badge>{partidoSeleccionado.fase}</Badge>
+            <div className="rounded-2xl bg-white px-4 py-3 text-center shadow-sm ring-1 ring-slate-200">
+              <p className="text-xs font-bold uppercase text-slate-500">
+                Predicciones
+              </p>
+              <p className="text-3xl font-black text-slate-900">
+                {prediccionesPartido.length}
+              </p>
+            </div>
           </div>
 
-          <h2 className="mt-4 text-4xl font-black">
-            {partidoSeleccionado.equipoLocal} vs{" "}
-            {partidoSeleccionado.equipoVisitante}
+          {partidoTieneResultado(partido) && (
+            <div className="mt-4 rounded-2xl bg-slate-900 px-4 py-3 text-white">
+              <p className="text-xs font-bold uppercase text-slate-300">
+                Resultado final
+              </p>
+              <p className="mt-1 text-3xl font-black">
+                {partido.golesLocal} - {partido.golesVisitante}
+              </p>
+            </div>
+          )}
+
+          {!partidoTieneResultado(partido) && partidoYaPaso(partido) && (
+            <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+              Este partido ya pasó, pero todavía no tiene resultado cargado.
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 sm:p-5">
+          {prediccionesPartido.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              No hay predicciones registradas para este partido.
+            </p>
+          ) : !puedeClasificar ? (
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">
+                Predicciones registradas
+              </h3>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {prediccionesPartido.map((prediccion) => (
+                  <PrediccionMiniCard
+                    key={prediccion.id}
+                    prediccion={prediccion}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-2xl bg-green-50 p-3 text-center">
+                  <p className="text-xs font-bold text-green-700">Exactas</p>
+                  <p className="text-2xl font-black text-green-700">
+                    {totalExactas}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-blue-50 p-3 text-center">
+                  <p className="text-xs font-bold text-blue-700">Resultado</p>
+                  <p className="text-2xl font-black text-blue-700">
+                    {totalResultado}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-red-50 p-3 text-center">
+                  <p className="text-xs font-bold text-red-700">Perdieron</p>
+                  <p className="text-2xl font-black text-red-700">
+                    {totalPerdidas}
+                  </p>
+                </div>
+              </div>
+
+              {grupos.exactas.length > 0 && (
+                <section>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Badge variant="green">Mejor predicción</Badge>
+                    <h3 className="text-base font-black text-slate-900">
+                      Marcador exacto
+                    </h3>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {grupos.exactas.map((prediccion) => (
+                      <PrediccionMiniCard
+                        key={prediccion.id}
+                        prediccion={prediccion}
+                        puntos={3}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {grupos.resultado.length > 0 && (
+                <section>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Badge variant="blue">Adivinaron resultado</Badge>
+                    <h3 className="text-base font-black text-slate-900">
+                      Ganador o empate correcto
+                    </h3>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {grupos.resultado.map((prediccion) => (
+                      <PrediccionMiniCard
+                        key={prediccion.id}
+                        prediccion={prediccion}
+                        puntos={1}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {grupos.perdidas.length > 0 && (
+                <section>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Badge variant="red">Perdieron</Badge>
+                    <h3 className="text-base font-black text-slate-900">
+                      No acertaron
+                    </h3>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {grupos.perdidas.map((prediccion) => (
+                      <PrediccionMiniCard
+                        key={prediccion.id}
+                        prediccion={prediccion}
+                        puntos={0}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  if (cargandoPartidos || cargandoPredicciones) {
+    return <Loader texto="Cargando partidos del día..." />;
+  }
+
+  return (
+    <PageContainer>
+      <AppHeader />
+
+      <div className="mb-6">
+        <p className="text-sm font-semibold text-blue-600">
+          Quiniela Mundial
+        </p>
+
+        <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+          Partidos del día
+        </h1>
+
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+          Revisa las predicciones de todos los participantes para cada partido
+          del día. Cuando un partido tenga resultado, se destacarán los
+          marcadores exactos, los aciertos de resultado y los fallos.
+        </p>
+      </div>
+
+      <Card className="mb-5 p-4 sm:p-5">
+        <label
+          htmlFor="fecha"
+          className="block text-sm font-black text-slate-700"
+        >
+          Fecha de partidos
+        </label>
+
+        <select
+          id="fecha"
+          value={fechaSeleccionada}
+          onChange={(event) => setFechaSeleccionada(event.target.value)}
+          className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+        >
+          {fechasDisponibles.map((fecha) => (
+            <option key={fecha} value={fecha}>
+              {formatearFechaDia(fecha)}
+            </option>
+          ))}
+        </select>
+      </Card>
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Partidos
+          </p>
+          <p className="mt-1 text-3xl font-black text-slate-900">
+            {partidosDelDia.length}
+          </p>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase text-slate-500">
+            En juego
+          </p>
+          <p className="mt-1 text-3xl font-black text-red-600">
+            {resumenDia.enJuego}
+          </p>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Finalizados
+          </p>
+          <p className="mt-1 text-3xl font-black text-green-600">
+            {resumenDia.finalizados}
+          </p>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-xs font-bold uppercase text-slate-500">
+            Predicciones
+          </p>
+          <p className="mt-1 text-3xl font-black text-blue-600">
+            {resumenDia.totalPredicciones}
+          </p>
+        </Card>
+      </div>
+
+      {partidosDelDia.length === 0 ? (
+        <Card>
+          <h2 className="text-xl font-black text-slate-900">
+            No hay partidos para esta fecha
           </h2>
 
-          <p className="mt-2 text-sm font-medium text-blue-100">
-            {formatearFecha(partidoSeleccionado.fecha)}
+          <p className="mt-2 text-slate-600">
+            Selecciona otra fecha disponible para revisar los partidos y sus
+            predicciones.
           </p>
-        </div>
-
-        <div className="rounded-2xl bg-white/15 px-6 py-5 text-center backdrop-blur">
-          <p className="text-sm font-semibold text-blue-100">
-            Predicciones registradas
-          </p>
-          <p className="mt-1 text-5xl font-black">{resumen.total}</p>
-        </div>
-      </div>
-    </Card>
-
-    {!partidoSeleccionadoYaInicio && (
-      <Card className="mb-6 border-blue-200 bg-blue-50">
-        <h2 className="text-xl font-black text-slate-900">
-          Próximo partido
-        </h2>
-
-        <p className="mt-2 text-slate-600">
-          Este partido todavía no inicia, pero ya puedes ver las predicciones
-          registradas por los participantes.
-        </p>
-      </Card>
-    )}
-
-    <div className="mb-6 grid gap-4 md:grid-cols-4">
-      <Card className="p-5">
-        <p className="text-sm font-semibold text-slate-500">
-          Total predicciones
-        </p>
-        <p className="mt-1 text-3xl font-black text-slate-900">
-          {resumen.total}
-        </p>
-      </Card>
-
-      <Card className="p-5">
-        <p className="text-sm font-semibold text-slate-500">
-          Gana {partidoSeleccionado.equipoLocal}
-        </p>
-        <p className="mt-1 text-3xl font-black text-blue-600">
-          {resumen.local}
-        </p>
-      </Card>
-
-      <Card className="p-5">
-        <p className="text-sm font-semibold text-slate-500">Empate</p>
-        <p className="mt-1 text-3xl font-black text-amber-600">
-          {resumen.empate}
-        </p>
-      </Card>
-
-      <Card className="p-5">
-        <p className="text-sm font-semibold text-slate-500">
-          Gana {partidoSeleccionado.equipoVisitante}
-        </p>
-        <p className="mt-1 text-3xl font-black text-green-600">
-          {resumen.visitante}
-        </p>
-      </Card>
-    </div>
-
-    <Card>
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900">
-            Predicciones de participantes
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Marcadores registrados para este partido.
-          </p>
-        </div>
-
-        {cargandoPredicciones && (
-          <p className="text-sm font-semibold text-slate-500">
-            Actualizando...
-          </p>
-        )}
-      </div>
-
-      {predicciones.length === 0 ? (
-        <p className="text-slate-600">
-          Todavía no hay predicciones registradas para este partido.
-        </p>
+        </Card>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-3 pr-4 font-semibold">
-                  Participante
-                </th>
-                <th className="py-3 pr-4 font-semibold">
-                  Predicción
-                </th>
-                <th className="py-3 pr-4 font-semibold">
-                  Tendencia
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {predicciones.map((prediccion) => (
-                <tr
-                  key={prediccion.id}
-                  className="border-b border-slate-100 text-slate-700 last:border-b-0 hover:bg-slate-50"
-                >
-                  <td className="py-4 pr-4">
-                    <p className="font-bold text-slate-900">
-                      {prediccion.userName ||
-                        prediccion.userEmail ||
-                        "Participante"}
-                    </p>
-
-                    {prediccion.userEmail && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {prediccion.userEmail}
-                      </p>
-                    )}
-                  </td>
-
-                  <td className="py-4 pr-4">
-                    <span className="rounded-xl bg-slate-100 px-4 py-2 text-lg font-black text-slate-900">
-                      {prediccion.golesLocalPredicho} -{" "}
-                      {prediccion.golesVisitantePredicho}
-                    </span>
-                  </td>
-
-                  <td className="py-4 pr-4">
-                    <Badge>
-                      {obtenerSigno(
-                        prediccion.golesLocalPredicho,
-                        prediccion.golesVisitantePredicho
-                      )}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-5">
+          {partidosDelDia.map((partido) => (
+            <PartidoCard key={partido.id} partido={partido} />
+          ))}
         </div>
       )}
-    </Card>
-  </PageContainer>
-);
+    </PageContainer>
+  );
 }
