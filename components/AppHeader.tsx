@@ -21,11 +21,26 @@ export default function AppHeader() {
         </div>
 
         <nav className="flex flex-wrap items-center gap-3">
+          {/* 
           <Link
             href="/quiniela"
             className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
           >
-            Quiniela
+            Grupos
+          </Link>
+*/}
+          <Link
+            href="/eliminatoria"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Eliminatoria
+          </Link>
+
+          <Link
+            href="/ranking-eliminatoria"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Ranking Eliminatoria
           </Link>
 
           <Link

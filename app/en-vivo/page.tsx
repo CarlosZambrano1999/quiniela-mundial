@@ -15,6 +15,10 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Loader from "@/components/ui/Loader";
 
+type EquipoGanador = "LOCAL" | "VISITANTE" | null;
+
+type TipoPartido = "grupos" | "eliminatoria";
+
 type Partido = {
   id: string;
   equipoLocal: string;
@@ -22,9 +26,13 @@ type Partido = {
   fecha: Timestamp;
   fase: string;
   grupo: string;
+  ronda?: string | null;
+  tipoPartido?: TipoPartido;
   estado: "programado" | "en_juego" | "finalizado";
   golesLocal: number | null;
   golesVisitante: number | null;
+  ganadorPenales?: EquipoGanador;
+  clasificado?: EquipoGanador;
 };
 
 type Prediccion = {
@@ -35,9 +43,22 @@ type Prediccion = {
   matchId: string;
   equipoLocal: string;
   equipoVisitante: string;
+
+  tipoPartido?: TipoPartido;
+
   golesLocalPredicho: number;
   golesVisitantePredicho: number;
+
+  ganadorPenalesPredicho?: EquipoGanador;
+  ganadorPenalesReal?: EquipoGanador;
+  clasificadoReal?: EquipoGanador;
+
   puntos?: number;
+  puntosEliminatoria?: number;
+  puntosExacto?: number;
+  puntosGanador?: number;
+  puntosDiferencia?: number;
+  puntosPenales?: number;
 };
 
 type ResultadoAgrupado = {
@@ -141,7 +162,8 @@ export default function EnVivoPage() {
 
   const partidosDelDia = useMemo(() => {
     return partidos.filter(
-      (partido) => obtenerFechaInput(partido.fecha.toDate()) === fechaSeleccionada
+      (partido) =>
+        obtenerFechaInput(partido.fecha.toDate()) === fechaSeleccionada
     );
   }, [partidos, fechaSeleccionada]);
 
@@ -233,6 +255,10 @@ export default function EnVivoPage() {
       return 0;
     }
 
+    if (partido.tipoPartido === "eliminatoria") {
+      return prediccion.puntosEliminatoria ?? prediccion.puntos ?? 0;
+    }
+
     const exacta =
       partido.golesLocal === prediccion.golesLocalPredicho &&
       partido.golesVisitante === prediccion.golesVisitantePredicho;
@@ -263,6 +289,21 @@ export default function EnVivoPage() {
     const perdidas: Prediccion[] = [];
 
     prediccionesPartido.forEach((prediccion) => {
+      if (partido.tipoPartido === "eliminatoria") {
+        const puntosEliminatoria =
+          prediccion.puntosEliminatoria ?? prediccion.puntos ?? 0;
+
+        if ((prediccion.puntosExacto ?? 0) > 0) {
+          exactas.push(prediccion);
+        } else if (puntosEliminatoria > 0) {
+          resultado.push(prediccion);
+        } else {
+          perdidas.push(prediccion);
+        }
+
+        return;
+      }
+
       const puntos = calcularPuntos(partido, prediccion);
 
       if (puntos === 3) {
@@ -343,13 +384,71 @@ export default function EnVivoPage() {
     };
   }
 
+  function obtenerEtiquetaTipoPartido(partido: Partido) {
+    if (partido.tipoPartido === "eliminatoria") {
+      return partido.ronda ?? "Eliminatoria";
+    }
+
+    return partido.grupo;
+  }
+
+  function obtenerTextoClasificado(partido: Partido) {
+    if (!partido.clasificado) {
+      return null;
+    }
+
+    return partido.clasificado === "LOCAL"
+      ? partido.equipoLocal
+      : partido.equipoVisitante;
+  }
+
+  function obtenerPuntosPrediccion(partido: Partido, prediccion: Prediccion) {
+    if (partido.tipoPartido === "eliminatoria") {
+      return prediccion.puntosEliminatoria ?? prediccion.puntos ?? 0;
+    }
+
+    return calcularPuntos(partido, prediccion);
+  }
+
+  function obtenerDetallePuntosEliminatoria(prediccion: Prediccion) {
+    const detalles: string[] = [];
+
+    if ((prediccion.puntosExacto ?? 0) > 0) {
+      detalles.push(`Exacto ${prediccion.puntosExacto} pts`);
+    }
+
+    if ((prediccion.puntosGanador ?? 0) > 0) {
+      detalles.push(`Ganador ${prediccion.puntosGanador} pts`);
+    }
+
+    if ((prediccion.puntosDiferencia ?? 0) > 0) {
+      detalles.push(`Diferencia ${prediccion.puntosDiferencia} pts`);
+    }
+
+    if ((prediccion.puntosPenales ?? 0) > 0) {
+      detalles.push(`Penales ${prediccion.puntosPenales} pts`);
+    }
+
+    return detalles;
+  }
+
   function PrediccionMiniCard({
+    partido,
     prediccion,
     puntos,
   }: {
+    partido: Partido;
     prediccion: Prediccion;
     puntos?: number;
   }) {
+    const totalPuntos =
+      puntos !== undefined ? puntos : obtenerPuntosPrediccion(partido, prediccion);
+
+    const detallesEliminatoria =
+      partido.tipoPartido === "eliminatoria"
+        ? obtenerDetallePuntosEliminatoria(prediccion)
+        : [];
+
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
@@ -365,11 +464,9 @@ export default function EnVivoPage() {
             )}
           </div>
 
-          {puntos !== undefined && (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
-              {puntos} pts
-            </span>
-          )}
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+            {totalPuntos} pts
+          </span>
         </div>
 
         <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-100 px-4 py-3">
@@ -379,6 +476,29 @@ export default function EnVivoPage() {
             {prediccion.golesVisitantePredicho}
           </span>
         </div>
+
+        {partido.tipoPartido === "eliminatoria" &&
+          prediccion.ganadorPenalesPredicho && (
+            <div className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+              Penales predicho:{" "}
+              {prediccion.ganadorPenalesPredicho === "LOCAL"
+                ? partido.equipoLocal
+                : partido.equipoVisitante}
+            </div>
+          )}
+
+        {detallesEliminatoria.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {detallesEliminatoria.map((detalle) => (
+              <span
+                key={detalle}
+                className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700"
+              >
+                {detalle}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -392,6 +512,8 @@ export default function EnVivoPage() {
     const totalExactas = grupos.exactas.length;
     const totalResultado = grupos.resultado.length;
     const totalPerdidas = grupos.perdidas.length;
+    const textoClasificado = obtenerTextoClasificado(partido);
+    const esEliminatoria = partido.tipoPartido === "eliminatoria";
 
     return (
       <Card className="overflow-hidden p-0">
@@ -400,7 +522,8 @@ export default function EnVivoPage() {
             <div>
               <div className="flex flex-wrap gap-2">
                 <Badge variant={estado.variant}>{estado.texto}</Badge>
-                <Badge>{partido.grupo}</Badge>
+                <Badge>{obtenerEtiquetaTipoPartido(partido)}</Badge>
+                <Badge>{esEliminatoria ? "Eliminatoria" : "Grupos"}</Badge>
                 <Badge>{formatearHora(partido.fecha)}</Badge>
               </div>
 
@@ -424,9 +547,25 @@ export default function EnVivoPage() {
               <p className="text-xs font-bold uppercase text-slate-300">
                 Resultado final
               </p>
+
               <p className="mt-1 text-3xl font-black">
                 {partido.golesLocal} - {partido.golesVisitante}
               </p>
+
+              {esEliminatoria && partido.ganadorPenales && (
+                <p className="mt-1 text-xs font-semibold text-amber-200">
+                  Ganador por penales:{" "}
+                  {partido.ganadorPenales === "LOCAL"
+                    ? partido.equipoLocal
+                    : partido.equipoVisitante}
+                </p>
+              )}
+
+              {esEliminatoria && textoClasificado && (
+                <p className="mt-1 text-xs font-semibold text-slate-300">
+                  Clasifica: {textoClasificado}
+                </p>
+              )}
             </div>
           )}
 
@@ -452,6 +591,7 @@ export default function EnVivoPage() {
                 {prediccionesPartido.map((prediccion) => (
                   <PrediccionMiniCard
                     key={prediccion.id}
+                    partido={partido}
                     prediccion={prediccion}
                   />
                 ))}
@@ -461,14 +601,18 @@ export default function EnVivoPage() {
             <div className="space-y-6">
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-2xl bg-green-50 p-3 text-center">
-                  <p className="text-xs font-bold text-green-700">Exactas</p>
+                  <p className="text-xs font-bold text-green-700">
+                    {esEliminatoria ? "Exactas" : "Exactas"}
+                  </p>
                   <p className="text-2xl font-black text-green-700">
                     {totalExactas}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-blue-50 p-3 text-center">
-                  <p className="text-xs font-bold text-blue-700">Resultado</p>
+                  <p className="text-xs font-bold text-blue-700">
+                    {esEliminatoria ? "Sumaron" : "Resultado"}
+                  </p>
                   <p className="text-2xl font-black text-blue-700">
                     {totalResultado}
                   </p>
@@ -495,8 +639,9 @@ export default function EnVivoPage() {
                     {grupos.exactas.map((prediccion) => (
                       <PrediccionMiniCard
                         key={prediccion.id}
+                        partido={partido}
                         prediccion={prediccion}
-                        puntos={3}
+                        puntos={obtenerPuntosPrediccion(partido, prediccion)}
                       />
                     ))}
                   </div>
@@ -506,9 +651,16 @@ export default function EnVivoPage() {
               {grupos.resultado.length > 0 && (
                 <section>
                   <div className="mb-3 flex items-center gap-2">
-                    <Badge variant="blue">Adivinaron resultado</Badge>
+                    <Badge variant="blue">
+                      {esEliminatoria
+                        ? "Sumaron puntos"
+                        : "Adivinaron resultado"}
+                    </Badge>
+
                     <h3 className="text-base font-black text-slate-900">
-                      Ganador o empate correcto
+                      {esEliminatoria
+                        ? "Ganador, diferencia o penales"
+                        : "Ganador o empate correcto"}
                     </h3>
                   </div>
 
@@ -516,8 +668,9 @@ export default function EnVivoPage() {
                     {grupos.resultado.map((prediccion) => (
                       <PrediccionMiniCard
                         key={prediccion.id}
+                        partido={partido}
                         prediccion={prediccion}
-                        puntos={1}
+                        puntos={obtenerPuntosPrediccion(partido, prediccion)}
                       />
                     ))}
                   </div>
@@ -529,7 +682,7 @@ export default function EnVivoPage() {
                   <div className="mb-3 flex items-center gap-2">
                     <Badge variant="red">Perdieron</Badge>
                     <h3 className="text-base font-black text-slate-900">
-                      No acertaron
+                      No sumaron puntos
                     </h3>
                   </div>
 
@@ -537,6 +690,7 @@ export default function EnVivoPage() {
                     {grupos.perdidas.map((prediccion) => (
                       <PrediccionMiniCard
                         key={prediccion.id}
+                        partido={partido}
                         prediccion={prediccion}
                         puntos={0}
                       />
@@ -570,8 +724,7 @@ export default function EnVivoPage() {
 
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
           Revisa las predicciones de todos los participantes para cada partido
-          del día. Cuando un partido tenga resultado, se destacarán los
-          marcadores exactos, los aciertos de resultado y los fallos.
+          del día. La vista soporta fase de grupos y ronda eliminatoria.
         </p>
       </div>
 

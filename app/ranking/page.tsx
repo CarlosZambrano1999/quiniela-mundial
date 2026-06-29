@@ -35,7 +35,9 @@ type PrediccionRanking = {
   golesVisitanteReal?: number;
   puntos?: number;
   partidoFinalizado?: boolean;
+  tipoPartido?: "grupos" | "eliminatoria";
 };
+
 
 type EstadisticaUsuario = {
   exactos: number;
@@ -114,35 +116,39 @@ const [usuarioDetalle, setUsuarioDetalle] =
     const estadisticasPorUsuario = new Map<string, EstadisticaUsuario>();
 
     predicciones.forEach((prediccion) => {
-      if (!prediccion.partidoFinalizado) {
-        return;
-      }
+  if (!prediccion.partidoFinalizado) {
+    return;
+  }
 
-      const puntos = prediccion.puntos ?? 0;
+  if (prediccion.tipoPartido === "eliminatoria") {
+    return;
+  }
 
-      const estadisticaActual = estadisticasPorUsuario.get(prediccion.userId) ?? {
-        exactos: 0,
-        acertados: 0,
-        perdidos: 0,
-        puntosExactos: 0,
-        puntosAcertados: 0,
-        puntosTotalesCalculados: 0,
-      };
+  const puntos = prediccion.puntos ?? 0;
 
-      if (puntos === 3) {
-        estadisticaActual.exactos += 1;
-        estadisticaActual.puntosExactos += 3;
-      } else if (puntos === 1) {
-        estadisticaActual.acertados += 1;
-        estadisticaActual.puntosAcertados += 1;
-      } else {
-        estadisticaActual.perdidos += 1;
-      }
+  const estadisticaActual = estadisticasPorUsuario.get(prediccion.userId) ?? {
+    exactos: 0,
+    acertados: 0,
+    perdidos: 0,
+    puntosExactos: 0,
+    puntosAcertados: 0,
+    puntosTotalesCalculados: 0,
+  };
 
-      estadisticaActual.puntosTotalesCalculados += puntos;
+  if (puntos === 3) {
+    estadisticaActual.exactos += 1;
+    estadisticaActual.puntosExactos += 3;
+  } else if (puntos === 1) {
+    estadisticaActual.acertados += 1;
+    estadisticaActual.puntosAcertados += 1;
+  } else {
+    estadisticaActual.perdidos += 1;
+  }
 
-      estadisticasPorUsuario.set(prediccion.userId, estadisticaActual);
-    });
+  estadisticaActual.puntosTotalesCalculados += puntos;
+
+  estadisticasPorUsuario.set(prediccion.userId, estadisticaActual);
+});
 
     return usuarios
       .map((usuario) => {
