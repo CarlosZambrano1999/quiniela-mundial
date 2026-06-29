@@ -51,12 +51,12 @@ export default function LoginPage() {
           fechaCreacion: serverTimestamp(),
         });
 
-        router.push("/ranking");
+        router.push("ranking-eliminatoria");
         return;
       }
 
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/ranking");
+      router.push("ranking-eliminatoria");
     } catch (error) {
       console.error(error);
       setMensajeError(obtenerMensajeError(error));
