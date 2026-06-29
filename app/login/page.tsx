@@ -51,12 +51,12 @@ export default function LoginPage() {
           fechaCreacion: serverTimestamp(),
         });
 
-        router.push("/quiniela");
+        router.push("/ranking");
         return;
       }
 
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/quiniela");
+      router.push("/ranking");
     } catch (error) {
       console.error(error);
       setMensajeError(obtenerMensajeError(error));
