@@ -38,6 +38,7 @@ export default function EliminatoriaPage() {
   const [guardandoId, setGuardandoId] = useState<string | null>(null);
   const [mensajeError, setMensajeError] = useState("");
   const [mensajeExito, setMensajeExito] = useState("");
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(obtenerFechaActualClave());
 
   useEffect(() => {
     if (cargando) {
@@ -133,23 +134,15 @@ export default function EliminatoriaPage() {
     return () => unsubscribe();
   }, [usuario]);
 
-  const resumen = useMemo(() => {
-    const total = partidos.length;
-    const guardadas = partidos.filter(
-      (partido) => predicciones[partido.id]?.guardada
-    ).length;
-    const pendientes = total - guardadas;
-    const finalizados = partidos.filter(
-      (partido) => partido.estado === "finalizado"
-    ).length;
+  function obtenerFechaActualClave() {
+    const hoy = new Date();
+    const anio = hoy.getFullYear();
+    const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+    const dia = String(hoy.getDate()).padStart(2, "0");
 
-    return {
-      total,
-      guardadas,
-      pendientes,
-      finalizados,
-    };
-  }, [partidos, predicciones]);
+    return `${anio}-${mes}-${dia}`;
+    }
+  
 
   function partidoYaInicio(partido: PartidoEliminatoria) {
     const fechaPartido = partido.fecha.toDate();
@@ -351,6 +344,65 @@ export default function EliminatoriaPage() {
     }
   }
 
+  function obtenerFechaClave(fecha: Date) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+    const dia = String(fecha.getDate()).padStart(2, "0");
+
+    return `${anio}-${mes}-${dia}`;
+    }
+
+    function formatearFechaVisible(fechaClave: string) {
+    const [anio, mes, dia] = fechaClave.split("-").map(Number);
+    const fecha = new Date(anio, mes - 1, dia);
+
+    return fecha.toLocaleDateString("es-HN", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+    });
+    }
+
+    const fechasDisponibles = useMemo(() => {
+  const fechas = partidos.map((partido) =>
+    obtenerFechaClave(partido.fecha.toDate())
+  );
+
+  return Array.from(new Set(fechas)).sort();
+}, [partidos]);
+
+const partidosFiltrados = useMemo(() => {
+  if (fechaSeleccionada === "TODAS") {
+    return partidos;
+  }
+
+  return partidos.filter(
+    (partido) => obtenerFechaClave(partido.fecha.toDate()) === fechaSeleccionada
+  );
+}, [partidos, fechaSeleccionada]);
+
+const resumen = useMemo(() => {
+  const total = partidosFiltrados.length;
+
+  const guardadas = partidosFiltrados.filter(
+    (partido) => predicciones[partido.id]?.guardada
+  ).length;
+
+  const pendientes = total - guardadas;
+
+  const finalizados = partidosFiltrados.filter(
+    (partido) => partido.estado === "finalizado"
+  ).length;
+
+  return {
+    total,
+    guardadas,
+    pendientes,
+    finalizados,
+  };
+}, [partidosFiltrados, predicciones]);
+
+
   if (cargando || cargandoPartidos || cargandoPredicciones) {
     return <Loader texto="Cargando eliminatoria..." />;
   }
@@ -439,7 +491,44 @@ export default function EliminatoriaPage() {
         </p>
       </Card>
 
-      {partidos.length === 0 ? (
+      <Card className="mb-6 p-4 sm:p-5">
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 className="text-lg font-black text-slate-900">
+        Filtrar partidos
+      </h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Selecciona una fecha para ver solo los partidos de ese día.
+      </p>
+    </div>
+
+    <div className="w-full sm:w-72">
+      <label
+        htmlFor="fechaPartidos"
+        className="mb-1 block text-xs font-bold uppercase text-slate-500"
+      >
+        Fecha
+      </label>
+
+      <select
+        id="fechaPartidos"
+        value={fechaSeleccionada}
+        onChange={(event) => setFechaSeleccionada(event.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+      >
+        <option value="TODAS">Todas las fechas</option>
+
+        {fechasDisponibles.map((fecha) => (
+          <option key={fecha} value={fecha}>
+            {formatearFechaVisible(fecha)}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+</Card>
+
+      {partidosFiltrados.length === 0 ? (
         <Card>
           <h2 className="text-xl font-black text-slate-900">
             No hay partidos de eliminatoria cargados
@@ -453,7 +542,7 @@ export default function EliminatoriaPage() {
         </Card>
       ) : (
         <div className="grid gap-5">
-          {partidos.map((partido) => (
+          {partidosFiltrados.map((partido) => (
             <KnockoutMatchCard
               key={partido.id}
               partido={partido}
